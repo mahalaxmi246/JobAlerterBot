@@ -1,7 +1,3 @@
-"""
-main.py — Uses PostgreSQL to track seen jobs (works on Render cron job).
-"""
-
 import hashlib
 import os
 from datetime import datetime
@@ -21,7 +17,6 @@ def get_db():
 
 
 def setup_db():
-    """Create the seen_jobs table if it doesn't exist yet."""
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
