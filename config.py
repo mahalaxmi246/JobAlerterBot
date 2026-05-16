@@ -64,6 +64,16 @@ COMPANIES = [
     "Razorpay",
     "Zepto",
     "Meesho",
+    "Amazon",
+    "Chargebee",
+    "Goldman Sachs",
+    "Morgan Stanley",
+    "Flipkart",
+    "IBM",
+    "Microsoft",
+    "Salesforce",
+    "Qualcomm",
+    "Oracle"
     # Add as many as you want
 ]
 
