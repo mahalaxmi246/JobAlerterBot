@@ -25,10 +25,6 @@ About: {profile['about'].strip()}
 
 
 def match_job(job: dict) -> dict | None:
-    """
-    Ask OpenAI to score a job posting against the candidate profile.
-    Returns enriched job dict with match data, or None if it should be skipped.
-    """
     profile_summary = build_profile_summary(PROFILE)
 
     prompt = f"""
@@ -45,9 +41,15 @@ Skills mentioned: {job['skills_text']}
 Salary: {job['salary']}
 Description: {job['description'][:600]}
 
-Analyze this job for the candidate and respond ONLY with valid JSON (no markdown, no explanation):
+STRICT RULES:
+- The job must be DIRECTLY at "{job['company']}" company — not a third party, consultant, or staffing agency hiring for {job['company']} tools/skills
+- If the hiring company is a staffing agency, consultant, or different company, set is_target_company: false
+- If job requires 2+ years experience, set is_fresher_role: false
+
+Respond ONLY with valid JSON (no markdown, no explanation):
 {{
   "is_fresher_role": true or false,
+  "is_target_company": true or false,
   "match_percent": integer 0-100,
   "matched_skills": ["skill1", "skill2"],
   "missing_skills": ["skill1", "skill2"],
@@ -59,32 +61,30 @@ Analyze this job for the candidate and respond ONLY with valid JSON (no markdown
 
 Rules:
 - match_percent should reflect skill overlap, role fit, location, and salary match
-- If the job is clearly NOT for freshers (requires 3+ years exp), set is_fresher_role: false
 - Be honest and specific in verdict
 """
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",           # cheapest OpenAI model, perfect for this
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
             max_tokens=400,
         )
         raw = response.choices[0].message.content.strip()
-        # Strip markdown code fences if present
         raw = raw.replace("```json", "").replace("```", "").strip()
         result = json.loads(raw)
-        
-        # Attach match data back to job
-        job["match_percent"]   = result.get("match_percent", 0)
-        job["matched_skills"]  = result.get("matched_skills", [])
-        job["missing_skills"]  = result.get("missing_skills", [])
-        job["salary_lpa"]      = result.get("salary_lpa", job.get("salary", "N/A"))
-        job["location"]        = result.get("location", "India")
-        job["verdict"]         = result.get("verdict", "")
-        job["role_type"]       = result.get("role_type", "Other")
-        job["is_fresher_role"] = result.get("is_fresher_role", True)
-        
+
+        job["match_percent"]    = result.get("match_percent", 0)
+        job["matched_skills"]   = result.get("matched_skills", [])
+        job["missing_skills"]   = result.get("missing_skills", [])
+        job["salary_lpa"]       = result.get("salary_lpa", job.get("salary", "N/A"))
+        job["location"]         = result.get("location", "India")
+        job["verdict"]          = result.get("verdict", "")
+        job["role_type"]        = result.get("role_type", "Other")
+        job["is_fresher_role"]  = result.get("is_fresher_role", True)
+        job["is_target_company"]= result.get("is_target_company", True)
+
         return job
 
     except Exception as e:
@@ -93,10 +93,9 @@ Rules:
 
 
 def filter_and_match(jobs: list[dict], min_match: int) -> list[dict]:
-    """Match all jobs and return only those above the threshold."""
     matched = []
     print(f"  Analysing {len(jobs)} job listings with OpenAI...")
-    
+
     for job in jobs:
         result = match_job(job)
         if result is None:
@@ -104,12 +103,14 @@ def filter_and_match(jobs: list[dict], min_match: int) -> list[dict]:
         if not result.get("is_fresher_role", True):
             print(f"    Skipped (not fresher): {result['title']}")
             continue
+        if not result.get("is_target_company", True):
+            print(f"    Skipped (not target company): {result['title']}")
+            continue
         if result["match_percent"] >= min_match:
             print(f"    ✓ Match {result['match_percent']}%: {result['title']} @ {result['company']}")
             matched.append(result)
         else:
             print(f"    ✗ Low match {result['match_percent']}%: {result['title']}")
-    
-    # Sort by match % descending
+
     matched.sort(key=lambda x: x["match_percent"], reverse=True)
     return matched
