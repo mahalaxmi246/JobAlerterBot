@@ -71,12 +71,8 @@ def run():
     all_jobs = get_all_jobs(COMPANIES)
     print(f"  Total raw listings found: {len(all_jobs)}\n")
 
-    seen = load_seen_jobs()
-    new_jobs = [j for j in all_jobs if job_id(j) not in seen]
-    print(f"[2/3] New (unseen) listings: {len(new_jobs)}")
-    if not new_jobs:
-        print("  Nothing new since last check. Done!")
-        return
+    new_jobs = all_jobs
+    print(f"[2/3] Total listings to analyse: {len(new_jobs)}")
 
     print(f"\n[3/3] Running AI matching (min {MIN_MATCH_PERCENT}% threshold)...")
     matched = filter_and_match(new_jobs, MIN_MATCH_PERCENT)
@@ -86,7 +82,7 @@ def run():
         print("\n[→] Sending alert email...")
         send_alert_email(matched)
 
-    save_seen_jobs([job_id(j) for j in new_jobs])
+    
 
     print(f"\n  Done! See you next run.")
     print(f"{'='*50}\n")
