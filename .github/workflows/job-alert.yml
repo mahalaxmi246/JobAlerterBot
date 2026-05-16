@@ -2,7 +2,7 @@ name: Job Alert Bot
 
 on:
   schedule:
-    - cron: "0 3 * * *"   # runs every day at 3:00 AM IST (9:30 PM UTC)
+    - cron: "30 4 * * *"  # runs every day at 3:00 AM IST (9:30 PM UTC)
   workflow_dispatch:        # lets you run it manually anytime from GitHub
 
 jobs:
