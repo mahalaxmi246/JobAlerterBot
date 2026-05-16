@@ -1,35 +1,64 @@
 """
-main.py — The brain. Run this manually or let the scheduler call it.
-Handles deduplication so you never get the same job twice.
+main.py — Uses PostgreSQL to track seen jobs (works on Render cron job).
 """
 
-import json
-import os
 import hashlib
+import os
 from datetime import datetime
 
-from config import COMPANIES, MIN_MATCH_PERCENT
-from scraper import get_all_jobs
-from matcher import filter_and_match
-from emailer import send_alert_email
+import psycopg2
 
-SEEN_JOBS_FILE = "seen_jobs.json"   # tracks already-alerted jobs
+from config import COMPANIES, MIN_MATCH_PERCENT
+from emailer import send_alert_email
+from matcher import filter_and_match
+from scraper import get_all_jobs
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+
+
+def get_db():
+    return psycopg2.connect(DATABASE_URL)
+
+
+def setup_db():
+    """Create the seen_jobs table if it doesn't exist yet."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS seen_jobs (
+            job_id TEXT PRIMARY KEY,
+            seen_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
 
 
 def load_seen_jobs() -> set:
-    if os.path.exists(SEEN_JOBS_FILE):
-        with open(SEEN_JOBS_FILE) as f:
-            return set(json.load(f))
-    return set()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT job_id FROM seen_jobs")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return set(r[0] for r in rows)
 
 
-def save_seen_jobs(seen: set):
-    with open(SEEN_JOBS_FILE, "w") as f:
-        json.dump(list(seen), f)
+def save_seen_jobs(new_job_ids: list):
+    conn = get_db()
+    cur = conn.cursor()
+    for job_id in new_job_ids:
+        cur.execute(
+            "INSERT INTO seen_jobs (job_id) VALUES (%s) ON CONFLICT DO NOTHING",
+            (job_id,)
+        )
+    conn.commit()
+    cur.close()
+    conn.close()
 
 
 def job_id(job: dict) -> str:
-    """Unique fingerprint for a job posting."""
     raw = f"{job['company']}|{job['title']}|{job['apply_link']}"
     return hashlib.md5(raw.encode()).hexdigest()
 
@@ -41,12 +70,12 @@ def run():
     print(f"  Tracking {len(COMPANIES)} companies: {', '.join(COMPANIES)}")
     print()
 
-    # Step 1: Scrape
+    setup_db()
+
     print("[1/3] Scraping job listings...")
     all_jobs = get_all_jobs(COMPANIES)
     print(f"  Total raw listings found: {len(all_jobs)}\n")
 
-    # Step 2: Deduplicate
     seen = load_seen_jobs()
     new_jobs = [j for j in all_jobs if job_id(j) not in seen]
     print(f"[2/3] New (unseen) listings: {len(new_jobs)}")
@@ -54,22 +83,17 @@ def run():
         print("  Nothing new since last check. Done!")
         return
 
-    # Step 3: AI Match
     print(f"\n[3/3] Running AI matching (min {MIN_MATCH_PERCENT}% threshold)...")
     matched = filter_and_match(new_jobs, MIN_MATCH_PERCENT)
     print(f"\n  Matched jobs above threshold: {len(matched)}")
 
-    # Step 4: Email
     if matched:
         print("\n[→] Sending alert email...")
         send_alert_email(matched)
 
-    # Step 5: Mark all new jobs as seen (even unmatched ones)
-    for job in new_jobs:
-        seen.add(job_id(job))
-    save_seen_jobs(seen)
+    save_seen_jobs([job_id(j) for j in new_jobs])
 
-    print(f"\n  Done! Next run in ~12 hours.")
+    print(f"\n  Done! See you next run.")
     print(f"{'='*50}\n")
 
 
