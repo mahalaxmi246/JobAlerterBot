@@ -1,26 +1,18 @@
 name: Job Alert Bot
-
 on:
-  schedule:
-    - cron: "30 4 * * *"  # runs every day at 3:00 AM IST (9:30 PM UTC)
   workflow_dispatch:        # lets you run it manually anytime from GitHub
-
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
       - name: Install dependencies
         run: pip install -r requirements.txt
-
       - name: Run job alert bot
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
